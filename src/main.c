@@ -47,7 +47,8 @@ DWORD SetBDCharacteristicsHook() {
 }
 
 void SetErrorModeHook(DWORD discType, DWORD mask, DWORD mode) {
-    if (cdb[0] == 0xC0) {
+    // check for raw read bit
+    if ((cdb[1] & 0x80)) {
         if (discType == 2) {
             // DVD
             mode &= ~0x01;
@@ -62,7 +63,11 @@ void SetErrorModeHook(DWORD discType, DWORD mask, DWORD mode) {
 void ChangeDiscRWModeHook(DWORD mode) {
     ChangeDiscRWMode(mode);
 
-    if (cdb[0] == 0xC0 && !(cdb[1] & 0x10)) {
+    // check for raw read bit and descramble flag
+    if (!(cdb[1] & 0x80))
+        return;
+
+    if (!(cdb[1] & 0x10)) {
         // disable descrambling
         SCRAMBLE_REGISTER_UNK1 &= ~0x08;
         SCRAMBLE_REGISTER_UNK2 &= ~0x04;
@@ -148,6 +153,9 @@ void BDReadCmdHook() {
         ReturnSenseCannotReadMediumIncompatibleFormat();
         return;
     }
+
+    cdb[1] &= 0x08; // make sure only FUA bit can be set
+
     BDReadCmd();
 }
 
@@ -156,10 +164,16 @@ void DVDReadCmdHook() {
         ReturnSenseCannotReadMediumIncompatibleFormat();
         return;
     }
+
+    cdb[1] &= 0x08; // make sure only FUA bit can be set
+
     DVDReadCmd();
 }
 
 static void ReadBDRaw() {
+    cdb[0] = 0xA8; // spoof command to READ(12)
+    cdb[1] |= 0x80; // set unused bit to indicate raw read
+
     // CD specific
     if (cdb[10]) {
         ReturnSenseInvalidFieldInCDB();
@@ -195,6 +209,9 @@ static void ReadBDRaw() {
 }
 
 static void ReadDVDRaw() {
+    cdb[0] = 0xA8; // spoof command to READ(12)
+    cdb[1] |= 0x80; // set unused bit to indicate raw read
+
     // CD specific
     if (cdb[10]) {
         ReturnSenseInvalidFieldInCDB();
